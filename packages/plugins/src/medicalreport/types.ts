@@ -1,3 +1,5 @@
+import { ObjectId } from 'mongodb';
+
 export interface ProcessReportParams {
   report_image: string; // URL or base64 encoded image
   api_key: string;
@@ -5,19 +7,63 @@ export interface ProcessReportParams {
   require_confirmation?: boolean;
 }
 
-export interface ParsedReportItem {
+export interface ReferenceRange {
+  min: number;
+  max: number;
+}
+
+export interface TrendAnalysis {
+  slope: number;
+  trend: 'increasing' | 'decreasing' | 'stable';
+  confidence: number;
+  prediction?: number;
+}
+
+export interface AlertCondition {
+  type: 'sudden_change' | 'trend' | 'threshold';
+  severity: 'low' | 'medium' | 'high';
+  message: string;
+}
+
+export interface ReportItem {
   value: number;
+  originalValue: string;
   unit: string;
-  referenceRange: string;
+  referenceRange?: ReferenceRange;
   status: 'normal' | 'high' | 'low';
-  category: string;
-  healthImplication: string;
+  change?: {
+    value: number;
+    percentage: number;
+    trend: 'up' | 'down' | 'stable';
+  };
+  trendAnalysis?: TrendAnalysis;
+  alerts?: AlertCondition[];
+  chartUrl?: string;
+}
+
+export interface Patient {
+  _id?: ObjectId;
+  patientId: string;
+  name: string;
+  phone: string;
+  hash: string;
+}
+
+export interface MedicalReport {
+  _id?: ObjectId;
+  reportId: string;
+  patientId: string;
+  date: Date;
+  parsedReport: Record<string, ReportItem>;
+  abnormalConditions?: string[];
+  confidence?: number;
+  createdAt?: Date;
 }
 
 export interface ProcessResult {
   success: boolean;
   fullReport: string;
-  parsedReport: Record<string, ParsedReportItem>;
+  parsedReport: Record<string, ReportItem>;
   abnormalConditions: Array<{
     name: string;
     value: number;
@@ -26,11 +72,9 @@ export interface ProcessResult {
   }>;
 }
 
-export interface MedicalReport {
-  id: string;
-  reportDate: Date;
-  indicators: Record<string, ParsedReportItem>;
-  abnormalIndicators: string[];
-  overallAssessment: string;
-  recommendations: string[];
+export interface ProcessReportResult {
+  success: boolean;
+  reportId?: string;
+  report?: MedicalReport;
+  error?: string;
 }
