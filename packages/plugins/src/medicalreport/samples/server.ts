@@ -124,7 +124,22 @@ app.get('/reports/:patientId', async (req, res) => {
     console.log('Getting reports for patient:', req.params.patientId);
     const reports = await plugin.getPatientReports(req.params.patientId);
     console.log('Found', reports.length, 'reports');
-    res.json(reports);
+    
+    // 格式化响应
+    const response = {
+      patientId: req.params.patientId,
+      totalReports: reports.length,
+      reports: reports.map(report => ({
+        ...report,
+        summary: {
+          totalItems: Object.keys(report.parsedReport || {}).length,
+          abnormalItems: report.abnormalConditions?.length || 0,
+          date: report.date,
+        }
+      }))
+    };
+    
+    res.json(response);
   } catch (error) {
     console.error('获取报告失败:', error);
     res.status(500).json({
