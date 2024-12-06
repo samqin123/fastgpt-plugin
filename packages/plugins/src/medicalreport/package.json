@@ -1,0 +1,21 @@
+{
+  "name": "@fastgpt/medical-report-plugin",
+  "version": "1.0.0",
+  "description": "Medical report analysis plugin for FastGPT",
+  "type": "module",
+  "main": "index.ts",
+  "scripts": {
+    "test": "node --experimental-specifier-resolution=node --loader ts-node/esm test-core.ts"
+  },
+  "dependencies": {
+    "mongodb": "^5.0.0",
+    "openai": "^4.0.0",
+    "base64-js": "^1.5.1",
+    "dotenv": "^16.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^4.9.0",
+    "ts-node": "^10.9.0",
+    "@types/node": "^18.0.0"
+  }
+}
