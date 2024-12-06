@@ -65,19 +65,22 @@ class MedicalReportPlugin {
       const abnormalConditions: string[] = [];
       
       for (const [name, item] of Object.entries(parsedItems)) {
-        const [min, max] = item.referenceRange.split('-').map(Number);
-        const value = parseFloat(item.originalValue);
+        const value = item.value;
+        const originalValue = item.originalValue;
+        const unit = item.unit;
+        const referenceRange = item.referenceRange;
+        const status = item.status;
         
         parsedReport[name] = {
           value: value,
-          originalValue: item.originalValue,
-          unit: item.originalValue.replace(/[\d.]/g, '').trim(),
-          referenceRange: { min, max },
-          status: item.status
+          originalValue: originalValue,
+          unit: unit,
+          referenceRange: referenceRange,
+          status: status
         };
         
-        if (item.status !== 'normal') {
-          abnormalConditions.push(`${name}: ${item.originalValue} (${item.status === 'high' ? '偏高' : '偏低'})`);
+        if (status !== 'normal') {
+          abnormalConditions.push(`${name}: ${originalValue} (${status === 'high' ? '偏高' : '偏低'})`);
         }
       }
       
@@ -162,6 +165,9 @@ class MedicalReportPlugin {
 
       const extractedText = response.choices[0].message.content || '';
       
+      // 添加调试日志
+      console.log('API返回的原始文本:', extractedText);
+      
       // 验证提取结果
       if (!extractedText) {
         throw new Error('未能成功提取报告文本');
@@ -169,22 +175,34 @@ class MedicalReportPlugin {
 
       // 格式验证
       const lines = extractedText.split('\n').map((line: string) => line.trim()).filter((line: string) => line);
-      if (lines.length < 3 || lines.length % 3 !== 0) {
-        throw new Error('提取的文本格式不正确');
+      console.log('处理后的文本行:', lines);
+      
+      // 放宽验证，只要有内容就接受
+      if (lines.length === 0) {
+        throw new Error('提取的文本为空');
       }
 
       // 验证每组数据的格式
       for (let i = 0; i < lines.length; i += 3) {
-        const value = lines[i + 1];
+        const name = lines[i];
+        const valueWithUnit = lines[i + 1];
         const range = lines[i + 2];
         
-        // 验证数值格式
-        if (!/^\d+\.?\d*\s*[a-zA-Z/]+$/.test(value)) {
-          throw new Error(`指标值格式不正确: ${value}`);
+        // 分离数值和单位
+        const valueMatch = valueWithUnit.match(/^([\d.]+)\s*(.*)$/);
+        if (!valueMatch) {
+          throw new Error(`无法解析数值和单位: ${valueWithUnit}`);
         }
         
-        // 验证参考范围格式
-        if (!/^\d+\.?\d*-\d+\.?\d*(\s*[HL])?$/.test(range)) {
+        const [, value, unit] = valueMatch;
+        
+        // 验证数值格式
+        if (!/^[\d.]+$/.test(value)) {
+          throw new Error(`数值格式不正确: ${value}`);
+        }
+        
+        // 验证参考范围格式（排除特殊情况如"仅适用于成人"）
+        if (range !== '仅适用于成人' && !/^[\d.]+-[\d.]+(\s*[HL])?$/.test(range)) {
           throw new Error(`参考范围格式不正确: ${range}`);
         }
       }
@@ -200,33 +218,68 @@ class MedicalReportPlugin {
   }
   
   // 解析复杂的医疗报告文本
-  private parseComplexMedicalReport(reportText: string): Record<string, { value: number; originalValue: string; referenceRange: string; status: 'normal' | 'high' | 'low' }> {
+  private parseComplexMedicalReport(reportText: string): Record<string, { value: number; originalValue: string; unit: string; referenceRange: ReferenceRange; status: 'normal' | 'high' | 'low' | 'unknown' }> {
+    const result: Record<string, any> = {};
     const lines = reportText.split('\n').map(line => line.trim()).filter(line => line);
-    const parsedReport: Record<string, { value: number; originalValue: string; referenceRange: string; status: 'normal' | 'high' | 'low' }> = {};
-    
+
     for (let i = 0; i < lines.length; i += 3) {
-      if (i + 2 < lines.length) {
-        const itemName = lines[i];
-        const value = lines[i + 1];
-        const referenceRange = lines[i + 2];
+      const name = lines[i];
+      const valueWithUnit = lines[i + 1];
+      const range = lines[i + 2];
 
-        // 尝试解析数值
-        const numericValue = parseFloat(value.replace(/[^\d.]/g, ''));
-        
-        // 处理特殊标记
-        const hasHighMark = referenceRange.includes('H');
-        const hasLowMark = referenceRange.includes('L');
-
-        parsedReport[itemName] = {
-          value: numericValue,
-          originalValue: value,
-          referenceRange: referenceRange.replace(/[HL]/g, '').trim(),
-          status: hasHighMark ? 'high' : hasLowMark ? 'low' : 'normal'
-        };
+      // 解析数值和单位
+      const valueMatch = valueWithUnit.match(/^([\d.]+)\s*(.*)$/);
+      if (!valueMatch) {
+        console.warn(`无法解析数值和单位: ${valueWithUnit}`);
+        continue;
       }
+
+      const [, valueStr, unit] = valueMatch;
+      const value = parseFloat(valueStr);
+
+      // 解析参考范围
+      let referenceRange: ReferenceRange;
+      let status: 'normal' | 'high' | 'low' | 'unknown' = 'unknown';
+
+      if (range === '仅适用于成人' || !range.includes('-')) {
+        // 处理特殊参考范围
+        referenceRange = {
+          special: range
+        };
+      } else {
+        // 处理普通数值范围
+        const rangeMatch = range.match(/^([\d.]+)-([\d.]+)(\s*[HL])?$/);
+        if (rangeMatch) {
+          const [, minStr, maxStr, flag] = rangeMatch;
+          const min = parseFloat(minStr);
+          const max = parseFloat(maxStr);
+          
+          referenceRange = { min, max };
+          
+          // 确定状态
+          if (flag === 'H' || value > max) {
+            status = 'high';
+          } else if (flag === 'L' || value < min) {
+            status = 'low';
+          } else {
+            status = 'normal';
+          }
+        } else {
+          console.warn(`无法解析参考范围: ${range}`);
+          referenceRange = { special: range };
+        }
+      }
+
+      result[name] = {
+        value,
+        originalValue: valueWithUnit,
+        unit,
+        referenceRange,
+        status
+      };
     }
 
-    return parsedReport;
+    return result;
   }
   
   // 验证 base64 数据
@@ -376,14 +429,14 @@ class MedicalReportPlugin {
     
     // 检查是否在参考范围内
     if (parsedRange) {
-      if (value > parsedRange.max) {
+      if (parsedRange.max !== undefined && value > parsedRange.max) {
         item.status = 'high';
         item.alerts?.push({
           type: 'threshold',
           severity: 'high',
           message: `${name}超出正常范围上限`
         });
-      } else if (value < parsedRange.min) {
+      } else if (parsedRange.min !== undefined && value < parsedRange.min) {
         item.status = 'low';
         item.alerts?.push({
           type: 'threshold',

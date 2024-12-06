@@ -49,20 +49,52 @@ async function initialize() {
 app.post('/process-sample', async (req, res) => {
   try {
     console.log('Processing sample report...');
+    console.log('Request body:', JSON.stringify(req.body, null, 2));
     
-    // 读取示例图片
-    const imagePath = join(__dirname, '..', '..', 'samples', 'sample_report.jpg');
-    console.log('Reading image from:', imagePath);
+    let imageBase64;
     
-    if (!fs.existsSync(imagePath)) {
-      console.error('Sample image not found:', imagePath);
-      return res.status(404).json({
-        success: false,
-        error: 'Sample image not found'
-      });
+    // 检查是否提供了图片路径
+    if (req.body.image_url) {
+      try {
+        // 尝试作为本地文件路径处理
+        const imagePath = req.body.image_url;
+        console.log('Attempting to read image from:', imagePath);
+        
+        if (fs.existsSync(imagePath)) {
+          console.log('File exists, reading content...');
+          imageBase64 = fs.readFileSync(imagePath, 'base64');
+          console.log('Successfully read image, size:', imageBase64.length);
+        } else {
+          console.log('File not found at path:', imagePath);
+          // 如果本地文件不存在，尝试作为URL处理
+          console.log('Trying as URL:', req.body.image_url);
+          const response = await fetch(req.body.image_url);
+          const arrayBuffer = await response.arrayBuffer();
+          imageBase64 = Buffer.from(arrayBuffer).toString('base64');
+        }
+      } catch (error) {
+        console.error('Detailed error:', error);
+        return res.status(400).json({
+          success: false,
+          error: `Failed to read image: ${error instanceof Error ? error.message : 'Unknown error'}`
+        });
+      }
+    } else {
+      // 使用本地示例图片作为后备
+      const imagePath = join(__dirname, 'sample_report.jpg');
+      console.log('Reading default sample image from:', imagePath);
+      
+      if (!fs.existsSync(imagePath)) {
+        console.error('Sample image not found:', imagePath);
+        return res.status(404).json({
+          success: false,
+          error: 'Sample image not found'
+        });
+      }
+      
+      imageBase64 = fs.readFileSync(imagePath, 'base64');
     }
     
-    const imageBase64 = fs.readFileSync(imagePath, 'base64');
     console.log('Image loaded, size:', imageBase64.length, 'bytes');
     
     // 处理报告

@@ -8,8 +8,9 @@ export interface ProcessReportParams {
 }
 
 export interface ReferenceRange {
-  min: number;
-  max: number;
+  min?: number;
+  max?: number;
+  special?: string;  // 添加特殊参考范围字段
 }
 
 export interface TrendAnalysis {
@@ -30,7 +31,7 @@ export interface ReportItem {
   originalValue: string;
   unit: string;
   referenceRange?: ReferenceRange;
-  status: 'normal' | 'high' | 'low';
+  status: 'normal' | 'high' | 'low' | 'unknown';  // 添加 unknown 状态
   change?: {
     value: number;
     percentage: number;
